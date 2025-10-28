@@ -88,9 +88,9 @@ def main():
     learning_rate = 1e-3
     train_split = 0.8
 
-    vae_checkpoint = 'E:/25fall/piwm-iclr/realDonkey/ex_upload/vae_best.pt'
-    data_path = 'E:/25fall/piwm-iclr/realDonkey/traj1.npz'
-    save_path = 'E:/25fall/piwm-iclr/realDonkey/ex_upload/mlp_best.pt'
+    vae_checkpoint = 'vae_best.pt'
+    data_path = ''
+    save_path = ''
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
