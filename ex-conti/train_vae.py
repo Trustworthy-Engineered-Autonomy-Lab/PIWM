@@ -100,8 +100,8 @@ def main():
     num_epochs = 50
     learning_rate = 1e-4
     kl_weight = 1.0
-    data_path = 'E:/25fall/piwm-iclr/realDonkey/traj1.npz'
-    save_path = 'E:/25fall/piwm-iclr/realDonkey/ex_upload/vae_best.pt'
+    data_path = ''
+    save_path = 'vae_best.pt'
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = ImageDataset(data_path)
