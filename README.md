@@ -31,7 +31,7 @@ PIWM consists of two core components:
 
 ```
 PIWM-main/
-├── vq/                     # VQ-VAE implementation (discrete latent space)
+├── vq/                    # VQ-VAE implementation (discrete latent space)
 │   ├── vq.py              # Vector-Quantized VAE model
 │   └── extractor.py       # State extraction from VQ-VAE latents
 ├── ex-conti/              # Extrinsic approach with continuous latent space
