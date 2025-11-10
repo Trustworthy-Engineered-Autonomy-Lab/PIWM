@@ -82,6 +82,30 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
 ## Usage
 
+### Data Collection
+
+For the **CartPole** and **Lunar Lander** environments, data collection follows the standard procedures detailed in the **Data Generation** section of our related repository's `README.md`:[**Data Generation Instructions**](https://github.com/Trustworthy-Engineered-Autonomy-Lab/hsai-predictor/blob/main/README.md#data-generation)
+
+
+The Donkey Car autonomous racing data is collected using the **`gym-donkeycar`** environment and the required **Donkey Car Simulation Environment**. The data collection method is consistent with the Gym-based approach used for CartPole and Lunar Lander.
+
+1.  **Install `gym-donkeycar`:**
+    The environment utilizes the official `gym-donkeycar` wrapper:
+    ```bash
+    pip install gym-donkeycar
+    ```
+    ([Source repository](https://github.com/tawnkramer/gym-donkeycar))
+
+2.  **Download the Simulator:**
+    You must download the **Donkey Car Simulation Environment** executable files (Unity build), which are compiled for Windows, Mac, and Linux: [Simulators]([https://github.com/tawnkramer/gym-donkeycar](https://github.com/tawnkramer/gym-donkeycar/releases))). The sandbox source code for the simulator is available here: [autorope/donkeycar](https://github.com/autorope/donkeycar).
+
+
+
+> **Optional/Advanced Simulator:**
+> We also provide a modified simulator version that supports pausing the environment, adjusting the frame rate, and skipping action frames: [Donkey-unity-sim with pause_func](https://github.com/Trustworthy-Engineered-Autonomy-Lab/donkey-unity-sim). **Note:** This advanced simulator is optional and not required for reproducing the core experiments in this repository.
+
+
+
 ### Extrinsic Approach 
 
 The extrinsic approach achieves the best performance by decoupling visual perception from physical state inference.
