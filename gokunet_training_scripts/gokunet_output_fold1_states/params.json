@@ -1,0 +1,10 @@
+{
+  "fold_idx": 1,
+  "noise_type": "states",
+  "epochs": 80,
+  "batch_size": 8,
+  "learning_rate": 0.0001,
+  "seq_len": 10,
+  "model": "GOKU-net",
+  "timestamp": "2025-09-09 10:13:53"
+}
