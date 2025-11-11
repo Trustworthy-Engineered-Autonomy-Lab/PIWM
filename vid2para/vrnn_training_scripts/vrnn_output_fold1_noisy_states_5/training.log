@@ -1,0 +1,18 @@
+2025-09-07 22:19:14,157 - INFO - ============================================================
+2025-09-07 22:19:14,157 - INFO - 开始VRNN训练 - Fold 1, 噪声类型: noisy_states_5
+2025-09-07 22:19:14,157 - INFO - 训练参数: {
+  "fold_idx": 1,
+  "noise_type": "noisy_states_5",
+  "epochs": 100,
+  "batch_size": 16,
+  "learning_rate": 0.001,
+  "seq_len": 10,
+  "hidden_dim": 256,
+  "z_dim": 128,
+  "timestamp": "2025-09-07 22:19:14"
+}
+2025-09-07 22:19:14,157 - INFO - ============================================================
+2025-09-07 22:19:14,217 - INFO - 使用设备: cuda
+2025-09-07 22:19:14,217 - INFO - 验证集目录: ../donkeynew_fold1
+2025-09-07 22:19:14,217 - INFO - 训练集目录: ['../donkeynew_fold2', '../donkeynew_fold3', '../donkeynew_fold4', '../donkeynew_fold5']
+2025-09-07 22:19:14,217 - ERROR - 数据加载失败: [WinError 3] The system cannot find the path specified: '../donkeynew_fold2'
