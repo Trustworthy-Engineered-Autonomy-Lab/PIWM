@@ -2,9 +2,16 @@ import argparse
 import csv
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.track_tools.minimonaco import DEFAULT_REGION_JSON_PATH, load_region_json
 
 try:
     import matplotlib
@@ -156,7 +163,7 @@ def heading_candidates(yaw):
 
 
 def step(state, steer, throttle, dt, params):
-    x, z, yaw, speed = state
+    x, z, yaw, speed, steer_state = state
     hx, hz = heading_candidates(np.array([yaw]))[params["heading_convention"]]
     x_next = x + params["x_speed_scale"] * speed * float(hx[0]) * dt + params["x_bias"] * dt
     z_next = z + params["z_speed_scale"] * speed * float(hz[0]) * dt + params["z_bias"] * dt
@@ -186,34 +193,89 @@ def default_bicycle_params():
         "steer_response": 0.3,
     }
 
+# # Params are the modifications to better fit the data
+# # n is the number of steps forward we are looking
+# # start is the state information at the start of this rollout
+# def evaluate_next_n_steps(n, params, start):
+#     base_state = np.array([start["x"], start["z"], start["yaw"], start["speed"], start["steer"]], dtype=float)
+#     rollout = np.zeros((n, 5), dtype=float)
+#     rollout[0] = base_state
+#     for i in range(n):
+#         input = #Get controller input
+#         rollout[i+1] = step(rollout[i], input["steer"][i], input["throttle"][i], input["dt"][i], params)
+#         #function that sends rollout position back to the controller
+#     return #Depends what we want to track and where
 
-def evaluate_log(log, params):
+def finite_metric(values, reducer):
+    if len(values) == 0:
+        return float("nan")
+    return float(reducer(values))
+
+
+def finite_mean(values):
+    finite_values = [value for value in values if not math.isnan(value)]
+    if not finite_values:
+        return float("nan")
+    return float(np.mean(finite_values))
+
+
+def evaluate_log(log, params, region):
     n = len(log["x"])
     one_step = np.zeros((n - 1, 5), dtype=float)
     rollout = np.zeros((n, 5), dtype=float)
     rollout[0] = [log["x"][0], log["z"][0], log["yaw"][0], log["speed"][0], log["steer"][0]]
+    crash_step = None
+    crash_margin = None
+
+    initial_track_result = region.check_point(rollout[0][0], rollout[0][1])
+    if not initial_track_result["inside"]:
+        crash_step = 0
+        crash_margin = float(initial_track_result["signed_margin"])
 
     for i in range(n - 1):
+        if crash_step is not None:
+            break
         measured_state = np.array([log["x"][i], log["z"][i], log["yaw"][i], log["speed"][i], log["steer"][i]], dtype=float)
         one_step[i] = step(measured_state, log["steer"][i], log["throttle"][i], log["dt"][i], params)
         rollout[i + 1] = step(rollout[i], log["steer"][i], log["throttle"][i], log["dt"][i], params)
+        track_result = region.check_point(rollout[i + 1][0], rollout[i + 1][1])
+        if not track_result["inside"]:
+            crash_step = i + 1
+            crash_margin = float(track_result["signed_margin"])
+            break
 
-    truth_next = np.column_stack([log["x"][1:], log["z"][1:], log["yaw"][1:], log["speed"][1:]])
-    one_pos_err = np.linalg.norm(one_step[:, :2] - truth_next[:, :2], axis=1)
-    roll_pos_err = np.linalg.norm(rollout[:, :2] - np.column_stack([log["x"], log["z"]]), axis=1)
+    valid_n = crash_step + 1 if crash_step is not None else n
+    valid_rollout = rollout[:valid_n]
+    valid_one_step_n = max(0, valid_n - 1)
+
+    truth_next = np.column_stack([
+        log["x"][1:valid_n],
+        log["z"][1:valid_n],
+        log["yaw"][1:valid_n],
+        log["speed"][1:valid_n],
+    ])
+    one_pos_err = np.linalg.norm(one_step[:valid_one_step_n, :2] - truth_next[:, :2], axis=1)
+    roll_pos_err = np.linalg.norm(
+        valid_rollout[:, :2] - np.column_stack([log["x"][:valid_n], log["z"][:valid_n]]),
+        axis=1,
+    )
     return {
-        "one_step_pos_rmse": float(np.sqrt(np.mean(one_pos_err**2))),
-        "one_step_pos_mae": float(np.mean(one_pos_err)),
-        "one_step_pos_p50": float(np.percentile(one_pos_err, 50)),
-        "one_step_pos_p95": float(np.percentile(one_pos_err, 95)),
-        "one_step_pos_max": float(np.max(one_pos_err)),
-        "rollout_pos_rmse": float(np.sqrt(np.mean(roll_pos_err**2))),
-        "rollout_pos_mae": float(np.mean(roll_pos_err)),
-        "rollout_pos_p50": float(np.percentile(roll_pos_err, 50)),
-        "rollout_pos_p95": float(np.percentile(roll_pos_err, 95)),
-        "rollout_final_pos_error": float(roll_pos_err[-1]),
-        "frames": int(n),
-        "rollout": rollout,
+        "one_step_pos_rmse": finite_metric(one_pos_err, lambda v: np.sqrt(np.mean(v**2))),
+        "one_step_pos_mae": finite_metric(one_pos_err, np.mean),
+        "one_step_pos_p50": finite_metric(one_pos_err, lambda v: np.percentile(v, 50)),
+        "one_step_pos_p95": finite_metric(one_pos_err, lambda v: np.percentile(v, 95)),
+        "one_step_pos_max": finite_metric(one_pos_err, np.max),
+        "rollout_pos_rmse": finite_metric(roll_pos_err, lambda v: np.sqrt(np.mean(v**2))),
+        "rollout_pos_mae": finite_metric(roll_pos_err, np.mean),
+        "rollout_pos_p50": finite_metric(roll_pos_err, lambda v: np.percentile(v, 50)),
+        "rollout_pos_p95": finite_metric(roll_pos_err, lambda v: np.percentile(v, 95)),
+        "rollout_final_pos_error": finite_metric(roll_pos_err, lambda v: v[-1]),
+        "frames": int(valid_n),
+        "original_frames": int(n),
+        "crashed": crash_step is not None,
+        "crash_step": "" if crash_step is None else int(crash_step),
+        "crash_margin": "" if crash_margin is None else crash_margin,
+        "rollout": valid_rollout,
     }
 
 
@@ -230,16 +292,18 @@ def group_summary(rows):
             "intensity": intensity,
             "runs": len(values),
             "frames": int(sum(v["frames"] for v in values)),
-            "one_step_pos_rmse": float(np.mean([v["one_step_pos_rmse"] for v in values])),
-            "one_step_pos_mae": float(np.mean([v["one_step_pos_mae"] for v in values])),
-            "one_step_pos_p50": float(np.mean([v["one_step_pos_p50"] for v in values])),
-            "one_step_pos_p95": float(np.mean([v["one_step_pos_p95"] for v in values])),
-            "one_step_pos_max": float(np.mean([v["one_step_pos_max"] for v in values])),
-            "rollout_pos_rmse": float(np.mean([v["rollout_pos_rmse"] for v in values])),
-            "rollout_pos_mae": float(np.mean([v["rollout_pos_mae"] for v in values])),
-            "rollout_pos_p50": float(np.mean([v["rollout_pos_p50"] for v in values])),
-            "rollout_pos_p95": float(np.mean([v["rollout_pos_p95"] for v in values])),
-            "rollout_final_pos_error": float(np.mean([v["rollout_final_pos_error"] for v in values])),
+            "original_frames": int(sum(v["original_frames"] for v in values)),
+            "crashes": int(sum(1 for v in values if v["crashed"])),
+            "one_step_pos_rmse": finite_mean([v["one_step_pos_rmse"] for v in values]),
+            "one_step_pos_mae": finite_mean([v["one_step_pos_mae"] for v in values]),
+            "one_step_pos_p50": finite_mean([v["one_step_pos_p50"] for v in values]),
+            "one_step_pos_p95": finite_mean([v["one_step_pos_p95"] for v in values]),
+            "one_step_pos_max": finite_mean([v["one_step_pos_max"] for v in values]),
+            "rollout_pos_rmse": finite_mean([v["rollout_pos_rmse"] for v in values]),
+            "rollout_pos_mae": finite_mean([v["rollout_pos_mae"] for v in values]),
+            "rollout_pos_p50": finite_mean([v["rollout_pos_p50"] for v in values]),
+            "rollout_pos_p95": finite_mean([v["rollout_pos_p95"] for v in values]),
+            "rollout_final_pos_error": finite_mean([v["rollout_final_pos_error"] for v in values]),
         })
     return summary
 
@@ -257,10 +321,16 @@ def plot_rollouts(output_dir, evaluated, limit):
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, (log, metrics) in enumerate(evaluated[:limit]):
         pred = metrics["rollout"]
+        frames = metrics["frames"]
         fig, ax = plt.subplots(figsize=(7, 6))
-        ax.plot(log["x"], log["z"], label="actual", linewidth=2)
+        ax.plot(log["x"][:frames], log["z"][:frames], label="actual", linewidth=2)
         ax.plot(pred[:, 0], pred[:, 1], label="bicycle rollout", linewidth=2)
-        ax.set_title(f"{log['case']} {log['intensity']} run {idx}")
+        if metrics["crashed"]:
+            ax.scatter(pred[-1, 0], pred[-1, 1], color="red", s=28, label="predicted crash")
+        title = f"{log['case']} {log['intensity']} run {idx}"
+        if metrics["crashed"]:
+            title += f" — predicted crash at frame {metrics['crash_step']}"
+        ax.set_title(title)
         ax.set_xlabel("pos_x")
         ax.set_ylabel("pos_z")
         ax.axis("equal")
@@ -293,6 +363,12 @@ def main():
         default=None,
         help="If set, split logs at position jumps larger than this and keep the longest continuous segment.",
     )
+    parser.add_argument(
+        "--region-json",
+        type=Path,
+        default=DEFAULT_REGION_JSON_PATH,
+        help="Track region JSON used to detect predicted off-track crashes.",
+    )
     args = parser.parse_args()
 
     logs = [
@@ -310,10 +386,11 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     params = default_bicycle_params()
+    region = load_region_json(args.region_json)
     evaluated = []
     run_rows = []
     for log in logs:
-        metrics = evaluate_log(log, params)
+        metrics = evaluate_log(log, params, region)
         evaluated.append((log, metrics))
         row = {
             "path": log["path"],
@@ -330,6 +407,7 @@ def main():
             "skip_frames": args.skip_frames,
             "steering_delay_frames": args.steering_delay_frames,
             "max_step_distance": args.max_step_distance,
+            "region_json": str(args.region_json),
             "params": params,
         }, f, indent=2)
     write_csv(output_dir / "run_metrics.csv", run_rows, [
@@ -337,6 +415,10 @@ def main():
         "case",
         "intensity",
         "frames",
+        "original_frames",
+        "crashed",
+        "crash_step",
+        "crash_margin",
         "one_step_pos_rmse",
         "one_step_pos_mae",
         "one_step_pos_p50",
@@ -353,6 +435,8 @@ def main():
         "intensity",
         "runs",
         "frames",
+        "original_frames",
+        "crashes",
         "one_step_pos_rmse",
         "one_step_pos_mae",
         "one_step_pos_p50",

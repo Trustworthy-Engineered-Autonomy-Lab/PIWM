@@ -1,6 +1,9 @@
 
 venv/
+venv_broken/
 outputs/
 Evaluation/
 *.csv
 *.png
+__pycache__/
+*.py[cod]
